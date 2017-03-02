@@ -1,8 +1,18 @@
+/***
+* 
+* Course Name: Distributed Database and Parallel Systems
+* Problem : 
+* Input: A collection of New York City Yellow Cab taxi trip records spanning January 2009 to June 2015. The source data may be clipped to an envelope * encompassing the five New York City boroughs in order to remove some of the noisy error data (e.g., latitude 40.5N – 40.9N, longitude 73.7W–74.25W).
+* Output:
+* A list of the fifty most significant hot spot cells in time and space as identified using the Getis-Ord statistic.
+* Refer http://sigspatial2016.sigspatial.org/giscup2016/problem for more details. 
+*
+***/
+
+
 import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.*;
-
 import scala.Tuple2;
-
 import java.io.File;
 import java.io.FileWriter;
 import java.io.Serializable;
@@ -10,26 +20,30 @@ import java.util.*;
 
 public class Phase3 implements Serializable {
 
-	static JavaSparkContext sc;
+	static JavaSparkContext sc;  
 	static String inputFile;
 	static String outputFile;
 
-	final static double latMin = 40.50;
+	//The following 4 variables represent the boundary of the location considered in NY
+	final static double latMin = 40.50;		
 	final static double latMax = 40.90;
 	final static double lonMin = -74.25;
 	final static double lonMax = -73.70;
-	final static double distRange = 0.01;
-	final static int days = 31;
-	final static int daysRange = 1;
+	
+	
+	final static double distRange = 0.01;  //each cell unit is 0.01*0.01 in terms of latitude and longitude degrees
+	final static int days = 31;				//No of days considered
+	final static int daysRange = 1;			
 	final static int numLats = (int) ((latMax - latMin + 0.01) / distRange);
 	final static int numLons = (int) Math.abs((lonMax - lonMin + 0.01) / distRange);
 	final static int numDays = days;
-	final static int totalCells = numLats * numLons * numDays;
-	static int[][][] attributeMatrix = new int[numLats][numLons][numDays];
-	static double[][][] zScoreMatrix = new double[numLats][numLons][numDays];
-	static List<Point> points_50 = new ArrayList<Point>();
-	static double total_sum_attribute_matrix = 0.0;
+	final static int totalCells = numLats * numLons * numDays;    //size of cube
+	static int[][][] attributeMatrix = new int[numLats][numLons][numDays];		//matrx to store denisty of each cell
+	static double[][][] zScoreMatrix = new double[numLats][numLons][numDays];	//corresponsing z score will be stored here
+	static List<Point> points_50 = new ArrayList<Point>();		//list which contains top 50 points with high z scores
+	static double total_sum_attribute_matrix = 0.0;		//used in computation of mean
 
+	//Driver class 
 	public Phase3(JavaSparkContext jsc, String f1, String f2) {
 		try {
 			sc = jsc;
@@ -38,13 +52,23 @@ public class Phase3 implements Serializable {
 			mapReduce();
 			calculateZscore();
 			writeToFile(f2);
-			// printAttributeMatrix();
-			// printZScoreMatrix();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
 
+	
+	/*
+	* This method implements Map Reduce functionality 
+	* For Map phase:
+	* Parses the given line and extracts the date, longitude and latitude fields
+	* Checks if the given line falls in the boundary we're interested in
+	* If so, form a key with latitude,longitude and date and count as value
+	* For Reduce phase:
+	* Get the count the for each key which represents the denisty corresponding to that location on a given day
+	* Populate the 3d attributeMatrix  with this info
+	*/
+	
 	@SuppressWarnings("unchecked")
 	public static void mapReduce() {
 		JavaRDD<String> csvData = sc.textFile(inputFile);
@@ -92,11 +116,15 @@ public class Phase3 implements Serializable {
 
 	}
 
+	
+	/*
+	* Main driver code
+	*/
 	public static void main(String[] args) {
 		try {
 			JavaSparkContext sc = new JavaSparkContext("local", "Phase3");
-			String inputFile = "/Users/santosh/Downloads/Phase3/yellow_tripdata_2015-01.csv";
-			String outFile = "/Users/santosh/Downloads/Phase3/output.csv";
+			String inputFile = "/Users/pchir/Downloads/Phase3/yellow_tripdata_2015-01.csv";
+			String outFile = "/Users/pchir/Downloads/Phase3/output.csv";
 
 			Phase3 g = new Phase3(sc, args[0], args[1]);
 		} catch (Exception e) {
@@ -105,15 +133,11 @@ public class Phase3 implements Serializable {
 
 	}
 
-	public static void callme(String inputFile, String outFile) {
-		try {
-			JavaSparkContext sc = new JavaSparkContext("local", "Phase3");
-			Phase3 g = new Phase3(sc, inputFile, outFile);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
 
+	/*
+	* This method writes top 50 geo spatial hot spots to the filename given  
+	* as argument
+	*/
 	public static void writeToFile(String filename) {
 		try {
 			File file = new File(filename);
@@ -130,6 +154,11 @@ public class Phase3 implements Serializable {
 		}
 	}
 
+	/*
+	* Calculate z score based on the formula
+	* given in the problem definition
+	* Problem definition link: http://sigspatial2016.sigspatial.org/giscup2016/problem
+	*/
 	private static void calculateZscore() {
 		double mean = calculateMean();
 		double variance = calculateVariance(mean);
@@ -154,6 +183,11 @@ public class Phase3 implements Serializable {
 
 	}
 
+	
+	/*
+	* This method calculates the mean required to compute G score
+	* using the information stored in 3D attributeMatrix 
+	*/
 	private static double calculateMean() {
 		double sum = 0.0;
 		for (int i = 0; i < numLats; i++) {
@@ -168,6 +202,11 @@ public class Phase3 implements Serializable {
 		return sum / totalCells;
 	}
 
+	
+	/*
+	* This method calculates the variace required to compute G score
+	* using the information stored in 3D attributeMatrix 
+	*/
 	private static double calculateVariance(double mean) {
 		double variance = 0.0;
 		for (int i = 0; i < numLats; i++) {
@@ -181,6 +220,11 @@ public class Phase3 implements Serializable {
 		return Math.sqrt((variance / totalCells) - (mean * mean));
 	}
 
+	
+	/*
+	* This method calculates the numerator part required to compute G score
+	* using the information stored in 3D attributeMatrix 
+	*/
 	public static double numerator(int i, int j, int k, double mean) {
 		double n = 0.0;
 		int sigmaW = adjacentCubes_sigmaW(i, j, k);
@@ -189,6 +233,12 @@ public class Phase3 implements Serializable {
 		return n;
 	}
 
+	
+	
+	/*
+	* This method calculates the denominator part required to compute G score
+	* using the information stored in 3D attributeMatrix 
+	*/
 	public static double denominator(int i, int j, int k, double variance) {
 		double d = 0.0;
 		int sigmaW = adjacentCubes_sigmaW(i, j, k);
@@ -199,6 +249,10 @@ public class Phase3 implements Serializable {
 		return d;
 	}
 
+	/*
+	* This method computes the density of all the adjacent cells in 
+	* attributeMatrix
+	*/
 	public static int totalPointsInaAdjacentCells_sigmaWX(int i, int j, int k) {
 
 		int count = 0;
@@ -258,6 +312,11 @@ public class Phase3 implements Serializable {
 		return count;
 	}
 
+	
+	/*
+	* This method check the coordinates in the attributeMatrix 
+	* whether the coordinate belong to face, edge, corner or normal cell in attributeMatrix
+	*/
 	public static int adjacentCubes_sigmaW(int i, int j, int k) {
 		int extreme = 0;
 
@@ -280,6 +339,9 @@ public class Phase3 implements Serializable {
 			return 27;
 	}
 
+	/*
+	* This method prints the attributeMatrix
+	*/
 	private static void printAttributeMatrix() {
 		for (int i = 0; i < numLats; i++) {
 			for (int j = 0; j < numLons; j++) {
@@ -289,6 +351,10 @@ public class Phase3 implements Serializable {
 		}
 	}
 
+	/*
+	* This method prints the score of each cell on 14th day 
+	* Used for testing purpose
+	*/
 	private static void printZScoreMatrix() {
 		for (int i = 0; i < numLats; i++) {
 			for (int j = 0; j < numLons; j++) {
@@ -298,6 +364,10 @@ public class Phase3 implements Serializable {
 		}
 	}
 
+	/*
+	*  Point class is used to represent the zcore of each cell in attributeMatrix. 
+	*  It is used in sorting the cells based in its G score using a Comparator
+	*/
 	static class Point implements Comparable {
 		int x;
 		int y;
